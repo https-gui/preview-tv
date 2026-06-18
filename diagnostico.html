@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico TV</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #111; color: #eee; padding: 20px; font-size: 14px; }
+  h2 { color: #3B82F6; margin-bottom: 16px; }
+  .card { background: #1E293B; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .ok   { color: #22C55E; font-weight: bold; }
+  .err  { color: #EF4444; font-weight: bold; }
+  .warn { color: #F59E0B; font-weight: bold; }
+  .info { color: #94A3B8; }
+  pre { background: #0A0A0F; padding: 10px; border-radius: 6px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin-top: 8px; max-height: 200px; overflow-y: auto; }
+  button { background: #2563EB; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; cursor: pointer; margin-right: 8px; margin-bottom: 8px; }
+  img#test-img { max-width: 300px; max-height: 180px; display: block; margin-top: 8px; border: 2px solid #334155; border-radius: 4px; background: #000; }
+  #log { font-size: 12px; }
+</style>
+</head>
+<body>
+<h2>🔍 Diagnóstico — LG WebOS</h2>
+
+<div class="card">
+  <b>1. Informações do navegador</b>
+  <pre id="browser-info"></pre>
+</div>
+
+<div class="card">
+  <b>2. Teste de conectividade com a API</b>
+  <div id="api-result" class="info">Aguardando...</div>
+  <pre id="api-raw"></pre>
+</div>
+
+<div class="card">
+  <b>3. Primeira imagem da playlist</b>
+  <div id="img-url" class="info">—</div>
+  <div id="img-result" class="info">Aguardando...</div>
+  <img id="test-img" alt="Imagem de teste">
+</div>
+
+<div class="card">
+  <b>4. Headers da resposta da imagem (fetch)</b>
+  <div id="headers-result" class="info">Aguardando...</div>
+  <pre id="headers-raw"></pre>
+</div>
+
+<div class="card">
+  <b>5. Log detalhado</b>
+  <pre id="log">—</pre>
+</div>
+
+<button onclick="runDiag()">▶ Rodar diagnóstico</button>
+<button onclick="clearLog()">Limpar</button>
+
+<script>
+var API = 'http://10.181.0.29:8085/api/api.php';
+var logEl = document.getElementById('log');
+
+function log(msg) {
+  var d = new Date();
+  var ts = (d.getHours()<10?'0':'')+d.getHours()+':'+(d.getMinutes()<10?'0':'')+d.getMinutes()+':'+(d.getSeconds()<10?'0':'')+d.getSeconds();
+  logEl.textContent = logEl.textContent === '—' ? '' : logEl.textContent;
+  logEl.textContent += '['+ts+'] ' + msg + '\n';
+}
+
+function clearLog() { logEl.textContent = '—'; }
+
+// 1. Info do navegador
+document.getElementById('browser-info').textContent = [
+  'userAgent: ' + navigator.userAgent,
+  'platform:  ' + navigator.platform,
+  'language:  ' + navigator.language,
+  'cookieEnabled: ' + navigator.cookieEnabled,
+  'onLine: ' + navigator.onLine,
+  'location: ' + window.location.href
+].join('\n');
+
+function runDiag() {
+  log('=== Iniciando diagnóstico ===');
+
+  // 2. Testar API
+  log('Chamando API: ' + API + '?action=playlist_items&playlist_id=1');
+  document.getElementById('api-result').textContent = 'Carregando...';
+  document.getElementById('api-result').className = 'info';
+
+  fetch(API + '?action=playlist_items&playlist_id=1')
+    .then(function(r) {
+      log('API respondeu: HTTP ' + r.status + ' ' + r.statusText);
+      log('Content-Type: ' + r.headers.get('content-type'));
+      log('CORS header: ' + r.headers.get('access-control-allow-origin'));
+      return r.text().then(function(txt) { return { status: r.status, text: txt }; });
+    })
+    .then(function(res) {
+      document.getElementById('api-result').textContent = '✔ HTTP ' + res.status;
+      document.getElementById('api-result').className = 'ok';
+      document.getElementById('api-raw').textContent = res.text.substring(0, 2000);
+
+      var items;
+      try { items = JSON.parse(res.text); } catch(e) { log('ERRO: JSON inválido — ' + e.message); return; }
+
+      if (!items || items.length === 0) {
+        log('Playlist vazia ou erro na resposta');
+        document.getElementById('img-result').textContent = 'Playlist vazia';
+        document.getElementById('img-result').className = 'warn';
+        return;
+      }
+
+      log('Itens na playlist: ' + items.length);
+      var first = items[0];
+      log('Primeiro item: ' + JSON.stringify(first));
+
+      // Montar URL absoluta
+      var rawUrl = first.url || '';
+      var absUrl = rawUrl;
+      if (rawUrl && rawUrl.indexOf('http') !== 0) {
+        var base = API.replace('/api/api.php', '');
+        absUrl = base + (rawUrl.charAt(0) === '/' ? '' : '/') + rawUrl;
+      }
+
+      log('URL raw do banco: ' + rawUrl);
+      log('URL absoluta usada: ' + absUrl);
+      document.getElementById('img-url').textContent = 'URL: ' + absUrl;
+
+      // 3. Testar carregamento via <img>
+      var testImg = document.getElementById('test-img');
+      testImg.onload = function() {
+        log('✔ <img> carregou com sucesso! naturalWidth=' + testImg.naturalWidth);
+        document.getElementById('img-result').textContent = '✔ Imagem carregou! (' + testImg.naturalWidth + 'x' + testImg.naturalHeight + ')';
+        document.getElementById('img-result').className = 'ok';
+      };
+      testImg.onerror = function() {
+        log('✘ <img> FALHOU ao carregar');
+        document.getElementById('img-result').textContent = '✘ Falhou ao carregar via <img>';
+        document.getElementById('img-result').className = 'err';
+      };
+      testImg.src = absUrl + '?_t=' + Date.now();
+
+      // 4. Testar via fetch (para ver headers)
+      log('Testando fetch() da imagem...');
+      fetch(absUrl, { method: 'HEAD' })
+        .then(function(r) {
+          log('Fetch imagem: HTTP ' + r.status);
+          var hdrs = [
+            'HTTP: ' + r.status + ' ' + r.statusText,
+            'content-type: ' + r.headers.get('content-type'),
+            'content-length: ' + r.headers.get('content-length'),
+            'access-control-allow-origin: ' + r.headers.get('access-control-allow-origin'),
+            'cache-control: ' + r.headers.get('cache-control'),
+            'x-content-type-options: ' + r.headers.get('x-content-type-options')
+          ].join('\n');
+          document.getElementById('headers-raw').textContent = hdrs;
+          document.getElementById('headers-result').textContent = 'HTTP ' + r.status;
+          document.getElementById('headers-result').className = r.status === 200 ? 'ok' : 'err';
+        })
+        .catch(function(e) {
+          log('✘ fetch() da imagem falhou: ' + e.message + ' | Tipo: ' + e.name);
+          document.getElementById('headers-result').textContent = '✘ ' + e.message;
+          document.getElementById('headers-result').className = 'err';
+          document.getElementById('headers-raw').textContent = 'Erro: ' + e.toString() + '\n\nIsso normalmente indica bloqueio CORS ou URL inacessível.';
+        });
+    })
+    .catch(function(e) {
+      log('✘ API FALHOU: ' + e.message);
+      document.getElementById('api-result').textContent = '✘ ' + e.message;
+      document.getElementById('api-result').className = 'err';
+      document.getElementById('api-raw').textContent = e.toString();
+    });
+}
+
+// Rodar automaticamente ao abrir
+window.onload = function() { runDiag(); };
+</script>
+</body>
+</html>
