@@ -1,0 +1,67 @@
+<?php
+ob_start(); // ? DEVE SER A PRIMEIRA LINHA, antes de tudo
+
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/php_error.log');
+error_reporting(E_ALL);
+
+// Credenciais do banco de dados.
+// Opção 1 (recomendado): variável de ambiente  →  export DB_PASS=sua_senha
+// Opção 2: arquivo INI fora do webroot         →  /etc/tv_anuncios.ini
+// Opção 3 (fallback): valores abaixo — não versionar este arquivo em repositórios públicos.
+$_dbCfg = [];
+$_iniFile = '/etc/tv_anuncios.ini';
+if (is_readable($_iniFile)) {
+    $_dbCfg = parse_ini_file($_iniFile);
+}
+define('DB_HOST', getenv('DB_HOST') ?: ($_dbCfg['DB_HOST'] ?? 'localhost'));
+define('DB_USER', getenv('DB_USER') ?: ($_dbCfg['DB_USER'] ?? 'phpmyadmin'));
+define('DB_PASS', getenv('DB_PASS') ?: ($_dbCfg['DB_PASS'] ?? '1n0v@c@0$educ21'));
+define('DB_NAME', getenv('DB_NAME') ?: ($_dbCfg['DB_NAME'] ?? 'tv_anuncios'));
+unset($_dbCfg, $_iniFile);
+
+define('UPLOAD_DIR', __DIR__ . '/uploads/');
+
+if (!defined('BASE_MEDIA_URL')) {
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
+    $host = $_SERVER['HTTP_HOST'];
+    $scriptPath = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
+    $basePath = rtrim(str_replace('/api', '', $scriptPath), '/');
+    define('BASE_MEDIA_URL', 'http://10.181.0.29:8085/api/uploads/');
+}
+
+if (!is_dir(UPLOAD_DIR)) {
+    mkdir(UPLOAD_DIR, 0755, true);
+}
+
+// CORS � ap�s ob_start, antes de qualquer echo
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit(0);
+}
+
+function getDbConnection() {
+    $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+    if ($conn->connect_error) {
+        errorResponse("Erro de conex�o MySQL: " . $conn->connect_error, 500);
+    }
+    $conn->set_charset('utf8mb4');
+    return $conn;
+}
+
+function jsonResponse($data, $statusCode = 200) {
+    ob_clean(); // agora funciona de verdade
+    http_response_code($statusCode);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit();
+}
+
+function errorResponse($message, $statusCode = 500) {
+    jsonResponse(['success' => false, 'message' => $message], $statusCode);
+}
