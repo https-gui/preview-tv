@@ -1,3 +1,4 @@
+PT-BR
 # 📺 Sistema de Exibição e Gerenciamento de Anúncios
 
 Sistema web para gerenciamento e exibição automatizada de imagens e vídeos em telas, televisores e painéis digitais. Desenvolvido para facilitar a organização de conteúdos e sua reprodução em modo de tela cheia.
@@ -81,3 +82,91 @@ Defina uma licença para o projeto antes de permitir formalmente seu uso, modifi
 ---
 
 Desenvolvido com foco na praticidade, organização e automação da exibição de conteúdos digitais.
+
+
+
+EN
+# 📺 Digital Signage & Advertisement Display System
+
+A web-based system for managing and displaying images and videos on screens, TVs, and digital signage displays. It provides an easy way to organize content and play it automatically in full-screen mode.
+
+## 🚀 Features
+
+- **Media Management:** Upload images in JPG, PNG, GIF, and WEBP formats, as well as videos in MP4, WEBM, OGV, and MOV formats.
+- **Playlist Management:** Organize the content to be displayed on screens.
+- **Drag-and-Drop Reordering:** Easily change the playback sequence by dragging and dropping media items.
+- **Content Customization:** Configure titles, subtitles, playback duration, and transition effects for each item.
+- **Automatic Playback:** Continuously play images and videos, with playlist looping support.
+- **Full-Screen Mode:** Display advertisements through a dedicated interface designed for TVs and digital signage screens.
+- **Clock and Playback Indicators:** Display the current time, a progress bar, and a content counter.
+- **Admin Dashboard:** Manage advertisements and control playback through an administrative interface.
+- **Data Persistence:** Connect to an API and database to store media information and playlists.
+- **Diagnostic Tool:** Check API connectivity and image loading, including diagnostic tests designed for LG webOS browsers.
+
+## 🛠️ Technologies
+
+- HTML5
+- CSS3
+- JavaScript
+- PHP for the API
+- MySQL or MariaDB
+- API integration for communication between the web interface and database
+
+## ⚙️ How It Works
+
+1. The administrator accesses the management dashboard.
+2. Images and videos are uploaded to the system.
+3. Media items are organized, and playback settings are configured.
+4. Playback is started on the target display.
+5. The system automatically displays the content according to the configured sequence and settings.
+
+## 🗄️ Database
+
+The database contains structures for managing playlists, media files, playlist items, display terminals, and playback logs.
+
+Main tables:
+
+- `playlists` — stores playlist information.
+- `midias` — stores image and video metadata.
+- `playlist_itens` — associates media with playlists and defines playback order.
+- `terminais` — stores display terminal information.
+- `logs_exibicao` — stores records related to content playback.
+
+The `tv_anuncios.sql` file contains the SQL database structure.
+
+## 📋 Requirements
+
+- A web server compatible with PHP.
+- MySQL or MariaDB.
+- An API configured to communicate with the database.
+- A modern browser compatible with the features used by the system.
+- Network connectivity between the admin dashboard, API, and display devices.
+
+## 🔧 Setup
+
+Before running the project:
+
+1. Set up the database using the `tv_anuncios.sql` file.
+2. Update the API address in the JavaScript code to point to your server.
+3. Configure database credentials on the server.
+4. Verify file upload and storage permissions.
+5. Test the system using the `diagnostico.html` page.
+
+**Important:** Do not publish passwords, real credentials, or internal server addresses in a public repository. Use environment-specific configuration and replace any example passwords before deploying the system to production.
+
+## 💖 Support the Project
+
+If you find this project useful and would like to support its continued development and improvement, consider making a donation through PayPal.
+
+**[❤️ Donate via PayPal](https://www.paypal.com/donate/?hosted_button_id=557HUPNMHMMHW)**
+
+Every contribution is appreciated and helps encourage the continued development of this project.
+
+## 📄 License
+
+Choose a license before formally allowing others to use, modify, or redistribute this project. You can add a `LICENSE` file to the root of the repository.
+
+---
+
+Developed with a focus on simplicity, organization, and automated digital content display.
+
