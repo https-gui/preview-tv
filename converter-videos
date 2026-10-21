@@ -1,0 +1,94 @@
+#!/bin/bash
+# =============================================================
+#  converter-videos.sh
+#  Converte todos os MP4 existentes para H.264 Baseline 3.1
+#  compatível com Chrome 79 / LG WebOS
+#
+#  Uso:
+#    chmod +x converter-videos.sh
+#    ./converter-videos.sh /caminho/para/uploads
+#
+#  Requisito: ffmpeg instalado no servidor
+#    Ubuntu/Debian: sudo apt install ffmpeg
+# =============================================================
+
+UPLOADS_DIR="${1:-/var/www/html/uploads}"
+
+# Verifica se ffmpeg está instalado
+if ! command -v ffmpeg &> /dev/null; then
+  echo "ERRO: ffmpeg não encontrado."
+  echo "Instale com: sudo apt install ffmpeg"
+  exit 1
+fi
+
+# Verifica se o diretório existe
+if [ ! -d "$UPLOADS_DIR" ]; then
+  echo "ERRO: Diretório não encontrado: $UPLOADS_DIR"
+  exit 1
+fi
+
+echo "================================================="
+echo " Conversor de vídeos para Chrome 79 / WebOS"
+echo " Diretório: $UPLOADS_DIR"
+echo "================================================="
+
+COUNT=0
+ERRORS=0
+
+# Processa todos os .mp4 no diretório (não recursivo)
+for INPUT in "$UPLOADS_DIR"/*.mp4 "$UPLOADS_DIR"/*.MP4 "$UPLOADS_DIR"/*.mov "$UPLOADS_DIR"/*.MOV; do
+  # Pula se não existir arquivo correspondente ao glob
+  [ -f "$INPUT" ] || continue
+
+  BASENAME=$(basename "$INPUT")
+  DIRNAME=$(dirname "$INPUT")
+  NAME="${BASENAME%.*}"
+  TMPFILE="$DIRNAME/${NAME}_tmp_converted.mp4"
+  BACKUPFILE="$DIRNAME/${NAME}_original_backup.mp4"
+
+  echo ""
+  echo "→ Processando: $BASENAME"
+
+  # Verifica se já está no formato correto (evita reconverter)
+  PROFILE=$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=profile,level \
+    -of default=noprint_wrappers=1 "$INPUT" 2>/dev/null)
+
+  echo "  Perfil atual: $PROFILE"
+
+  # Converte para:
+  #   - H.264 Baseline profile level 3.1 (máxima compatibilidade WebOS)
+  #   - AAC audio estéreo 128k
+  #   - faststart: move moov atom para o início (essencial para streaming)
+  #   - escala para máximo 1280x720 mantendo proporção (performance WebOS)
+  ffmpeg -i "$INPUT" \
+    -c:v libx264 \
+    -profile:v baseline \
+    -level:v 3.1 \
+    -preset slow \
+    -crf 23 \
+    -vf "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+    -c:a aac \
+    -b:a 128k \
+    -ac 2 \
+    -movflags +faststart \
+    -y \
+    "$TMPFILE" 2>&1 | grep -E "(Error|error|frame=|fps=|time=|bitrate=)" | tail -5
+
+  if [ $? -eq 0 ] && [ -f "$TMPFILE" ]; then
+    # Faz backup do original e substitui
+    mv "$INPUT" "$BACKUPFILE"
+    mv "$TMPFILE" "$INPUT"
+    echo "  ✓ Convertido com sucesso. Backup salvo em: ${NAME}_original_backup.mp4"
+    COUNT=$((COUNT + 1))
+  else
+    echo "  ✗ ERRO na conversão de: $BASENAME"
+    rm -f "$TMPFILE"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+echo ""
+echo "================================================="
+echo " Concluído: $COUNT convertido(s), $ERRORS erro(s)"
+echo "================================================="
