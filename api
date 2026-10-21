@@ -1,0 +1,333 @@
+<?php
+require_once 'config.php';
+
+if (ob_get_length()) ob_clean();
+
+$action = $_GET['action'] ?? null;
+$method = $_SERVER["REQUEST_METHOD"];
+
+if ($action === "uploads") $action = "upload";
+
+if (!$action) errorResponse("Nenhuma ação especificada.", 400);
+
+try {
+    switch ($action) {
+        case "media":            handleMediaRequest($method);           break;
+        case "playlists":        handlePlaylistsRequest($method);       break;
+        case "playlist_items":   handlePlaylistItemsRequest($method);   break;
+        case "upload":           handleUploadRequest($method);          break;
+        case "reorder_playlist": handleReorderPlaylistRequest($method); break;
+        case "move_item":        handleMoveItemRequest($method);        break;
+        default: errorResponse("Ação desconhecida: $action", 404);      break;
+    }
+} catch (Throwable $e) {
+    errorResponse("Erro Crítico: " . $e->getMessage());
+}
+
+function handleMediaRequest($method) {
+    $conn = getDbConnection();
+    if ($method === "GET") {
+        $result = $conn->query("SELECT * FROM midias");
+        $midias = [];
+        while ($row = $result->fetch_assoc()) {
+            $row["url"] = BASE_MEDIA_URL . $row["nome_salvo"];
+            $midias[] = $row;
+        }
+        jsonResponse($midias);
+    } elseif ($method === "DELETE") {
+        $input = json_decode(file_get_contents("php://input"), true);
+        $id = $input["id"] ?? null;
+        if (!$id) errorResponse("ID obrigatório.");
+
+        $stmt = $conn->prepare("SELECT nome_salvo FROM midias WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $stmt->bind_result($nome_salvo);
+        $stmt->fetch();
+        $stmt->close();
+
+        if ($nome_salvo && file_exists(UPLOAD_DIR . $nome_salvo)) unlink(UPLOAD_DIR . $nome_salvo);
+
+        $stmt = $conn->prepare("DELETE FROM midias WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        jsonResponse(["success" => true]);
+    }
+    $conn->close();
+}
+
+function handlePlaylistsRequest($method) {
+    $conn = getDbConnection();
+    if ($method === "GET") {
+        $result = $conn->query("SELECT * FROM playlists LIMIT 1");
+        $playlists = [];
+        while ($row = $result->fetch_assoc()) $playlists[] = $row;
+        jsonResponse($playlists);
+    } elseif ($method === "PUT") {
+        $input    = json_decode(file_get_contents("php://input"), true);
+        $loop     = $input['loop_mode']         ?? 'loop';
+        $duration = (int)($input['default_duration'] ?? 10);
+        $clock    = (int)($input['show_clock']        ?? 1);
+        $id       = (int)($input['id']                ?? 1);
+        $stmt = $conn->prepare("UPDATE playlists SET loop_mode=?, default_duration=?, show_clock=? WHERE id=?");
+        $stmt->bind_param("siii", $loop, $duration, $clock, $id);
+        $stmt->execute();
+        jsonResponse(["success" => true]);
+    }
+    $conn->close();
+}
+
+function handlePlaylistItemsRequest($method) {
+    $conn = getDbConnection();
+
+    if ($method === "GET") {
+        $playlist_id = (int)($_GET["playlist_id"] ?? 1);
+        $stmt = $conn->prepare(
+            "SELECT pi.*, m.nome_arquivo, m.nome_salvo, m.tipo
+             FROM playlist_itens pi
+             JOIN midias m ON pi.midia_id = m.id
+             WHERE pi.playlist_id = ?
+             ORDER BY pi.ordem ASC, pi.id ASC"
+        );
+        $stmt->bind_param("i", $playlist_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $items = [];
+        while ($row = $result->fetch_assoc()) {
+            $row["url"] = BASE_MEDIA_URL . $row["nome_salvo"];
+            $items[] = $row;
+        }
+        jsonResponse($items);
+
+    } elseif ($method === "POST") {
+        $input       = json_decode(file_get_contents("php://input"), true);
+        $playlist_id = (int)($input['playlist_id'] ?? 1);
+        $midia_id    = (int)($input['midia_id']    ?? 0);
+        $ordem       = (int)($input['ordem']       ?? 0);
+        $titulo      = $input['titulo']    ?? null;
+        $subtitulo   = $input['subtitulo'] ?? null;
+        $duracao     = (isset($input['duracao']) && $input['duracao'] !== '' && $input['duracao'] !== null) ? (int)$input['duracao'] : 10;
+        $transicao   = in_array($input['transicao'] ?? '', ['fade', 'none']) ? $input['transicao'] : 'fade';
+
+        $stmt = $conn->prepare(
+            "INSERT INTO playlist_itens
+             (playlist_id, midia_id, ordem, titulo, subtitulo, duracao, transicao)
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param("iiissis", $playlist_id, $midia_id, $ordem, $titulo, $subtitulo, $duracao, $transicao);
+        if ($stmt->execute()) {
+            jsonResponse(["success" => true, "id" => $conn->insert_id]);
+        } else {
+            errorResponse("Erro ao inserir item: " . $stmt->error);
+        }
+
+    } elseif ($method === "PUT") {
+        $input     = json_decode(file_get_contents("php://input"), true);
+        $id        = (int)($input['id'] ?? 0);
+
+        if (isset($input['ordem']) && count($input) <= 2) {
+            $ordem = (int)$input['ordem'];
+            $stmt = $conn->prepare("UPDATE playlist_itens SET ordem=? WHERE id=?");
+            $stmt->bind_param("ii", $ordem, $id);
+            if ($stmt->execute()) {
+                jsonResponse(["success" => true]);
+            } else {
+                errorResponse("Erro ao atualizar ordem: " . $stmt->error);
+            }
+        } else {
+            $titulo    = $input['titulo']    ?? null;
+            $subtitulo = $input['subtitulo'] ?? null;
+            $duracao   = (isset($input['duracao']) && $input['duracao'] !== '' && $input['duracao'] !== null) ? (int)$input['duracao'] : 10;
+            $transicao = in_array($input['transicao'] ?? '', ['fade', 'none']) ? $input['transicao'] : 'fade';
+
+            $stmt = $conn->prepare(
+                "UPDATE playlist_itens SET titulo=?, subtitulo=?, duracao=?, transicao=? WHERE id=?"
+            );
+            $stmt->bind_param("ssisi", $titulo, $subtitulo, $duracao, $transicao, $id);
+            if ($stmt->execute()) {
+                jsonResponse(["success" => true]);
+            } else {
+                errorResponse("Erro ao atualizar item: " . $stmt->error);
+            }
+        }
+
+    } elseif ($method === "DELETE") {
+        $input = json_decode(file_get_contents("php://input"), true);
+        $id    = (int)($input['id'] ?? 0);
+        $stmt  = $conn->prepare("DELETE FROM playlist_itens WHERE id=?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        jsonResponse(["success" => true]);
+    }
+
+    $conn->close();
+}
+
+function handleUploadRequest($method) {
+    if (!isset($_FILES["file"])) errorResponse("Arquivo não recebido.");
+    $file = $_FILES["file"];
+
+    if ($file["error"] !== UPLOAD_ERR_OK) errorResponse("Erro PHP no Upload: " . $file["error"]);
+
+    // Valida MIME type real (via finfo), não apenas a extensão ou o header HTTP
+    $finfo    = new finfo(FILEINFO_MIME_TYPE);
+    $realMime = $finfo->file($file["tmp_name"]);
+    $allowed  = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+    ];
+    if (!in_array($realMime, $allowed, true)) {
+        errorResponse("Tipo de arquivo não permitido: $realMime");
+    }
+
+    // Extensão permitida (baseada no MIME real, não no nome do arquivo)
+    $mimeToExt = [
+        'image/jpeg' => 'jpg', 'image/png' => 'png',
+        'image/gif'  => 'gif', 'image/webp' => 'webp',
+        'video/mp4'  => 'mp4', 'video/webm' => 'webm',
+        'video/ogg'  => 'ogv', 'video/quicktime' => 'mov',
+    ];
+    $ext = $mimeToExt[$realMime];
+
+    if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0755, true);
+
+    $uniqueName = uniqid('', true) . "." . $ext;
+    $caminho    = "uploads/" . $uniqueName;
+
+    if (!move_uploaded_file($file["tmp_name"], UPLOAD_DIR . $uniqueName)) {
+        errorResponse("Erro ao mover arquivo. Verifique permissões da pasta uploads.");
+    }
+
+    $type    = (strpos($realMime, "image/") === 0) ? "image" : "video";
+    $tamanho = (int)$file["size"];
+    $conn    = getDbConnection();
+
+    $stmt = $conn->prepare(
+        "INSERT INTO midias (nome_arquivo, nome_salvo, tipo, mime_type, tamanho_bytes, caminho)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    $stmt->bind_param("ssssis", $file["name"], $uniqueName, $type, $realMime, $tamanho, $caminho);
+    if ($stmt->execute()) {
+        jsonResponse(["success" => true, "midia" => [
+            "id"           => $conn->insert_id,
+            "nome_arquivo" => $file["name"],
+            "tipo"         => $type,
+            "url"          => BASE_MEDIA_URL . $uniqueName
+        ]]);
+    } else {
+        errorResponse("Erro ao salvar no banco: " . $stmt->error);
+    }
+    $conn->close();
+}
+
+function handleReorderPlaylistRequest($method) {
+    $conn        = getDbConnection();
+    $input       = json_decode(file_get_contents("php://input"), true);
+    $playlist_id = (int)($input['playlist_id'] ?? 1);
+
+    // Estratégia: a coluna `ordem` é UNSIGNED com UNIQUE KEY no InnoDB.
+    // unique_checks=0 e valores negativos não funcionam com UNSIGNED.
+    // Solução: dentro de uma transação, deletamos todos os itens da playlist
+    // e resinserimos com a ordem correta. Os dados de mídia (tabela `midias`)
+    // não são tocados — só os registros de playlist_itens são recriados.
+    $conn->begin_transaction();
+
+    try {
+        if (!empty($input['ordered_ids']) && is_array($input['ordered_ids'])) {
+            $ids = array_values(array_filter(array_map('intval', $input['ordered_ids']), fn($v) => $v > 0));
+        } else {
+            $result = $conn->query(
+                "SELECT id FROM playlist_itens
+                 WHERE playlist_id = $playlist_id
+                 ORDER BY ordem ASC, id ASC"
+            );
+            $ids = [];
+            while ($row = $result->fetch_assoc()) $ids[] = (int)$row['id'];
+        }
+
+        if (empty($ids)) {
+            $conn->commit();
+            $conn->close();
+            jsonResponse(["success" => true]);
+        }
+
+        // Lê os dados completos de cada item na ordem enviada pelo frontend
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $types        = str_repeat('i', count($ids));
+        $stmt = $conn->prepare(
+            "SELECT id, midia_id, titulo, subtitulo, duracao, transicao, ativo
+             FROM playlist_itens
+             WHERE playlist_id = ? AND id IN ($placeholders)"
+        );
+        $params = array_merge([$playlist_id], $ids);
+        $stmt->bind_param('i' . $types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        // Indexa por id para preservar todos os metadados
+        $byId = [];
+        foreach ($rows as $r) $byId[$r['id']] = $r;
+
+        // Deleta todos os itens atuais da playlist
+        $del = $conn->prepare("DELETE FROM playlist_itens WHERE playlist_id = ?");
+        $del->bind_param("i", $playlist_id);
+        if (!$del->execute()) throw new Exception("Erro ao deletar: " . $del->error);
+        $del->close();
+
+        // Reinsere na ordem correta enviada pelo frontend
+        // FIX: sanitiza cada campo para evitar truncation em colunas ENUM/NOT NULL
+        $ins = $conn->prepare(
+            "INSERT INTO playlist_itens
+             (playlist_id, midia_id, ordem, titulo, subtitulo, duracao, transicao, ativo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $validTransicoes = ['fade', 'none'];
+        foreach ($ids as $i => $id) {
+            if (!isset($byId[$id])) continue;
+            $r         = $byId[$id];
+            $ordem     = $i;
+            $titulo    = $r['titulo']    ?? '';
+            $subtitulo = $r['subtitulo'] ?? '';
+            $duracao   = (isset($r['duracao']) && $r['duracao'] !== null && $r['duracao'] !== '') ? (int)$r['duracao'] : 10;
+            $transicao = (isset($r['transicao']) && in_array($r['transicao'], $validTransicoes))
+                         ? $r['transicao'] : 'fade';
+            $ativo     = (int)($r['ativo'] ?? 1);
+            $ins->bind_param(
+                "iiissisi",
+                $playlist_id, $r['midia_id'], $ordem,
+                $titulo, $subtitulo, $duracao,
+                $transicao, $ativo
+            );
+            if (!$ins->execute()) throw new Exception("Erro ao reinserir id=$id: " . $ins->error);
+        }
+        $ins->close();
+        $conn->commit();
+
+    } catch (Throwable $e) {
+        $conn->rollback();
+        $conn->close();
+        errorResponse("Erro ao reordenar: " . $e->getMessage());
+    }
+
+    $conn->close();
+    jsonResponse(["success" => true]);
+}
+
+
+function handleMoveItemRequest($method) {
+    $conn    = getDbConnection();
+    $input   = json_decode(file_get_contents("php://input"), true);
+    $item_id    = (int)($input['item_id']    ?? 0);
+    $nova_ordem = (int)($input['nova_ordem'] ?? 0);
+    if ($item_id > 0) {
+        $stmt = $conn->prepare("UPDATE playlist_itens SET ordem = ? WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param("ii", $nova_ordem, $item_id);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+    $conn->close();
+    jsonResponse(["success" => true]);
+}
