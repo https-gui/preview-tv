@@ -75,9 +75,6 @@ Se este projeto foi útil para você e deseja contribuir para seu desenvolviment
 
 Toda contribuição é bem-vinda e ajuda a incentivar a continuidade do projeto.
 
-## 📄 Licença
-
-Defina uma licença para o projeto antes de permitir formalmente seu uso, modificação e redistribuição. Você pode adicionar um arquivo `LICENSE` à raiz do repositório.
 
 ---
 
@@ -162,9 +159,7 @@ If you find this project useful and would like to support its continued developm
 
 Every contribution is appreciated and helps encourage the continued development of this project.
 
-## 📄 License
 
-Choose a license before formally allowing others to use, modify, or redistribute this project. You can add a `LICENSE` file to the root of the repository.
 
 ---
 
