@@ -6,7 +6,6 @@ Sistema web para gerenciamento e exibição automatizada de conteúdos digitais 
 
 A solução foi desenvolvida para simplificar a administração de conteúdos exibidos em diferentes ambientes, centralizando a configuração e a organização das mídias em uma interface web.
 
-🌐 **Site / Website:** [Acesse o sistema](https://viewclock.vercel.app)
 
 ---
 
